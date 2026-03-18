@@ -22,6 +22,7 @@ AgriScale orchestrates the end-to-end execution of gridded soil-crop simulations
     - [SLURM Job Array](#slurm-job-array)
     - [Singularity Bind Mounts](#singularity-bind-mounts)
   - [Input Database Schema](#input-database-schema)
+  - [Example Output](#example-output)
   - [Performance Notes](#performance-notes)
   - [Citation](#citation)
   - [License](#license)
@@ -216,6 +217,14 @@ Simulations are driven by a **MasterInput SQLite database** (`db/MasterInput.db`
 When spatially explicit management is enabled (`s_sowing=1`, etc.), AgriScale automatically regenerates the `CropManagement` table with unique identifiers encoding the grid cell and scenario.
 
 A template schema is provided in `db/ori_MasterInput.db`.
+
+---
+
+## Example Output
+
+The map below shows 2011–2020 mean simulated water-limited maize yields over Sub-Saharan Africa at 0.05° resolution, produced by a multi-model AgriScale run with CELSIUS, DSSAT, and STICS (11,490,195 simulations total).
+
+![Simulated maize yields over Sub-Saharan Africa — CELSIUS, DSSAT, STICS (2011–2020 mean, 0.05°)](docs/images/fig_yield_map.png)
 
 ---
 
