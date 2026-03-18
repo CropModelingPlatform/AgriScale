@@ -8,21 +8,23 @@ AgriScale orchestrates the end-to-end execution of gridded soil-crop simulations
 
 ## Table of Contents
 
-- [Key Features](#key-features)
-- [Architecture](#architecture)
-- [Integrated Models](#integrated-models)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Get the Container](#get-the-container)
-  - [Data Setup](#data-setup)
-- [Configuration](#configuration)
-- [Running Simulations](#running-simulations)
-  - [SLURM Job Array](#slurm-job-array)
-  - [Singularity Bind Mounts](#singularity-bind-mounts)
-- [Input Database Schema](#input-database-schema)
-- [Performance Notes](#performance-notes)
-- [Citation](#citation)
-- [License](#license)
+- [AgriScale](#agriscale)
+  - [Table of Contents](#table-of-contents)
+  - [Key Features](#key-features)
+  - [Architecture](#architecture)
+  - [Integrated Models](#integrated-models)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Get the Container](#get-the-container)
+    - [Data Setup](#data-setup)
+  - [Configuration](#configuration)
+  - [Running Simulations](#running-simulations)
+    - [SLURM Job Array](#slurm-job-array)
+    - [Singularity Bind Mounts](#singularity-bind-mounts)
+  - [Input Database Schema](#input-database-schema)
+  - [Performance Notes](#performance-notes)
+  - [Citation](#citation)
+  - [License](#license)
 
 ---
 
@@ -213,7 +215,7 @@ Simulations are driven by a **MasterInput SQLite database** (`db/MasterInput.db`
 
 When spatially explicit management is enabled (`s_sowing=1`, etc.), AgriScale automatically regenerates the `CropManagement` table with unique identifiers encoding the grid cell and scenario.
 
-A template schema is provided in `db/ori_MasterInput.db`. A detailed field-level description is available in the paper (Appendix B, Table B.1).
+A template schema is provided in `db/ori_MasterInput.db`.
 
 ---
 
@@ -221,8 +223,8 @@ A template schema is provided in `db/ori_MasterInput.db`. A detailed field-level
 
 Benchmark results from the paper (3,830,650 simulations per model over Sub-Saharan Africa at 0.05° resolution):
 
-- Speedup is near-linear up to ~16 cores per task; distributed task partitioning maintains scaling beyond 32–64 cores where single-task multiprocessing plateaus
-- Job efficiency ranges from **70–92%** across HPC environments and I/O strategies
+- Speedup can be super linear when applying AgriScale strategy based on the caching and Node locality strategies.
+- Job efficiency (resource utilization) ranges from **70–92%** across HPC environments and I/O strategies
 - The **Node Locality Strategy** (staging I/O to `$TMPDIR`) is strongly recommended for ZFS and EXT4 file systems to avoid shared file-system contention
 
 ---
