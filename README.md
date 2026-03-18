@@ -19,7 +19,9 @@ AgriScale orchestrates the end-to-end execution of gridded soil-crop simulations
     - [Data Setup](#data-setup)
   - [Configuration](#configuration)
   - [Running Simulations](#running-simulations)
-    - [SLURM Job Array](#slurm-job-array)
+    - [HPC Cluster (SLURM)](#hpc-cluster-slurm)
+    - [HPC Cluster (PBS/Torque)](#hpc-cluster-pbstorque)
+    - [Local Server or Cloud VM](#local-server-or-cloud-vm)
     - [Singularity Bind Mounts](#singularity-bind-mounts)
   - [Input Database Schema](#input-database-schema)
   - [Example Output](#example-output)
@@ -33,7 +35,7 @@ AgriScale orchestrates the end-to-end execution of gridded soil-crop simulations
 
 - **Multi-model support** — run CELSIUS, DSSAT, and STICS in a unified workflow without modifying their source code
 - **Adaptive spatial partitioning** — automatic domain decomposition into balanced subdomains for dynamic load balancing
-- **Hierarchical parallelism** — combines inter-task distributed execution with intra-task multiprocessing via SLURM job arrays
+- **Hierarchical parallelism** — combines inter-task distributed execution with intra-task multiprocessing; compatible with any job scheduler or manual parallelism
 - **I/O optimization** — application-level caching and two storage strategies (shared storage and node-local) to reduce file-system contention
 - **Container-based portability** — all models and dependencies are packaged in a single Singularity SIF image (`datamill.sif`)
 - **SQLite-backed data management** — lightweight relational database (`MasterInput.db`) structures simulation units, soil, climate, cultivar, and management inputs
@@ -43,13 +45,13 @@ AgriScale orchestrates the end-to-end execution of gridded soil-crop simulations
 
 ## Architecture
 
-AgriScale divides a spatial domain into a regular grid and partitions grid cells into subdomains using row-major ordering with near-equal load balancing (see Appendix A in the paper). Each SLURM array task processes one subdomain:
+AgriScale divides a spatial domain into a regular grid and partitions grid cells into subdomains using row-major ordering with near-equal load balancing (see Appendix A in the paper). Each task processes one subdomain and can be dispatched by any job scheduler or run manually in parallel:
 
 ```
 User specifies domain (bounding box + resolution)
         │
         ▼
-Spatial domain partitioning  ──►  N subdomains  (SLURM --array=0-N)
+Spatial domain partitioning  ──►  N subdomains  (one task per subdomain)
         │
         ▼  (per subdomain task)
 ┌─────────────────────────────────────────────┐
@@ -84,7 +86,10 @@ Models are invoked via model adapters that handle input generation, executable i
 ### Prerequisites
 
 - **Singularity** (≥ 3.x) or **Apptainer** (≥ 1.x) installed on your compute environment
-- **SLURM** workload manager (for HPC job submission)
+- A compute environment — any of the following:
+  - HPC cluster with SLURM, PBS/Torque, LSF, or similar scheduler
+  - Cloud VM (AWS, GCP, Azure) or virtual cluster
+  - Local multi-core server or workstation
 - Input datasets: gridded climate (NetCDF/Zarr), soil, and optionally sowing date rasters at consistent spatial resolution
 - A populated `MasterInput.db` SQLite database (see [Input Database Schema](#input-database-schema))
 
@@ -163,15 +168,15 @@ simoption=(2)
 
 ## Running Simulations
 
-### SLURM Job Array
+Each simulation is split into `N` spatial subdomains (controlled by the `parts` parameter in `config.ini`). One task is launched per subdomain; tasks are independent and can be dispatched by any scheduler or run manually.
 
-Submit a job array where each task processes one spatial subdomain:
+### HPC Cluster (SLURM)
 
 ```bash
 sbatch --array=0-<N-1> datamill.sh
 ```
 
-Replace `<N-1>` with the number of subdomains minus one (determined by the `parts` parameter in `config.ini` or set automatically). For example, for 15 subdomains:
+For example, for 15 subdomains:
 
 ```bash
 sbatch --array=0-14 datamill.sh
@@ -186,19 +191,63 @@ Key SLURM parameters in `datamill.sh` (edit to match your cluster):
 #SBATCH --partition cpu-dedicated
 ```
 
+### HPC Cluster (PBS/Torque)
+
+Adapt `datamill.sh` to PBS directives and use a job array:
+
+```bash
+#PBS -l select=1:ncpus=8:mem=64gb
+#PBS -l walltime=23:58:00
+#PBS -J 0-14
+
+export INDEXES=$PBS_ARRAY_INDEX
+export ncpus=8
+export nchunks=15
+```
+
+Submit with:
+```bash
+qsub -J 0-14 datamill.sh
+```
+
+### Local Server or Cloud VM
+
+On a machine with no job scheduler, launch tasks in parallel using `xargs` or GNU `parallel`:
+
+```bash
+# Run 4 subdomains in parallel on a server with 32 cores (8 cpus each)
+seq 0 3 | xargs -P 4 -I{} bash -c '
+  export INDEXES={} ncpus=8 nchunks=4
+  singularity exec --no-home \
+    -B $(pwd):/package \
+    -B /path/to/inputData:/inputData \
+    -B /path/to/results:/inter \
+    -B /path/to/results:/outputData \
+    datamill.sif /package/scripts/main.sh $INDEXES $ncpus $nchunks
+'
+```
+
+On a **cloud VM** (AWS EC2, GCP, Azure), the same command applies — mount your object storage bucket or NFS share to `/inputData` and `/outputData` before running.
+
 ### Singularity Bind Mounts
 
-The container is launched with the following bind mounts (adapt paths to your site):
+The container is launched with the following bind mounts (adapt paths to your environment):
 
 | Mount inside container | Example host path | Purpose |
 |------------------------|------------------|---------|
-| `/package` | `/scratch/$USER/AgriScale_Ind` | AgriScale working directory |
-| `/inputData` | `/storage/…/data_zarr` | Input climate/soil data |
-| `/inter` | `/scratch/$USER/AgriScale_Ind/results` | Intermediate files |
-| `/outputData` | `/scratch/$USER/AgriScale_Ind/results` | Final outputs |
-| `$TMPDIR` | `/scratch/$USER/tmp` | Fast local scratch (NLS strategy) |
+| `/package` | `/path/to/AgriScale` | AgriScale working directory |
+| `/inputData` | `/path/to/data` | Input climate/soil data |
+| `/inter` | `/path/to/results` | Intermediate files |
+| `/outputData` | `/path/to/results` | Final outputs |
+| `$TMPDIR` | `/tmp/$USER` | Fast local scratch (NLS strategy) |
 
-Edit the `singularity exec` command in `datamill.sh` to match your site's paths.
+**Examples by environment:**
+
+- **HPC with SLURM/PBS**: use the scheduler-provided scratch space, e.g. `/scratch/$USER/…`
+- **Cloud VM (AWS/GCP/Azure)**: mount an NFS share, EFS, or object-storage FUSE path
+- **Local server**: use any directory on the host, e.g. `$(pwd)/results`
+
+Edit the `singularity exec` command in `datamill.sh` to match your paths.
 
 ---
 
