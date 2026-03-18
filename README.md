@@ -87,15 +87,24 @@ Models are invoked via model adapters that handle input generation, executable i
 
 ### Get the Container
 
-Download the pre-built `datamill.sif` container from the latest CI release of [AgriscaleContainer](https://github.com/CropModelingPlatform/AgriscaleContainer):
+Download the pre-built `datamill.sif` container from the latest release of [AgriscaleContainer](https://github.com/CropModelingPlatform/AgriscaleContainer/releases/latest):
 
 ```bash
 bash scripts/download_container.sh
 ```
 
-This script downloads the artifact from the latest successful workflow run and places `datamill.sif` in the current directory. You need a GitHub token with `read:packages` or `actions:read` scope set as the `GITHUB_TOKEN` environment variable, or the [GitHub CLI](https://cli.github.com/) (`gh`) authenticated.
+This downloads `datamill.sif` directly from the GitHub Release asset — no authentication required for a public repository. To pin a specific version:
 
-Alternatively, download `datamill.sif` manually from the [Actions artifacts page](https://github.com/CropModelingPlatform/AgriscaleContainer/actions).
+```bash
+AGRISCALE_VERSION=v1.2.0 bash scripts/download_container.sh
+```
+
+For private repositories, set `GITHUB_TOKEN` beforehand:
+
+```bash
+export GITHUB_TOKEN=ghp_your_token_here
+bash scripts/download_container.sh
+```
 
 ### Data Setup
 
