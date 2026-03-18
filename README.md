@@ -244,6 +244,8 @@ If you use AgriScale in your work, please cite:
 
 > Midingoyi, C. A., Falconnier, G. N., Blitz-Frayret, C., Pradal, C., Giner, M., Adam, M., Corbeels, M., Couëdel, A., Heuclin, B., Lavarenne, J., Gerardeaux, E., Loison, R., Agbohessou, Y., et al. (2025). *AgriScale: A Distributed Framework for Gridded Crop Models Ensemble applications*. Manuscript submitted for publication.
 
+The current version of the software is defined in [`version.py`](version.py). Releases are published automatically on GitHub when the version changes. A DOI will be assigned via Zenodo upon journal acceptance.
+
 ---
 
 ## License
