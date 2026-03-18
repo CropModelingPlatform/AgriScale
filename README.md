@@ -285,6 +285,10 @@ Benchmark results from the paper (3,830,650 simulations per model over Sub-Sahar
 - Job efficiency (resource utilization) ranges from **70–92%** across HPC environments and I/O strategies
 - The **Node Locality Strategy** (staging I/O to `$TMPDIR`) is strongly recommended for ZFS and EXT4 file systems to avoid shared file-system contention
 
+**Figure 5** — Benchmark across 3 computing environments (HPC, cloud VM, local server):
+
+![Benchmark across computing environments](docs/images/fig_benchmark.png)
+
 ---
 
 ## Citation
