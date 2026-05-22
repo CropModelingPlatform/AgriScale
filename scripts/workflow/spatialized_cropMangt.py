@@ -11,6 +11,7 @@ from glob import glob
 import json
 import geopandas as gpd
 import numpy as np
+import re
 import rioxarray
 from scipy.ndimage import binary_fill_holes
 
@@ -44,6 +45,12 @@ def main():
         parser.add_argument('--cropmask', help="if crop mask is used")
         parser.add_argument('--nchunks', help="number of tasks")
         parser.add_argument('--testoption', help="if it is a test")
+        parser.add_argument(
+            '--sowing_time_mode',
+            choices=['static', 'yearly'],
+            default='static',
+            help='static: sowing_date(lat, lon); yearly: sowing_date(time, lat, lon)'
+        )
         
 
         scratch = 0
@@ -51,6 +58,7 @@ def main():
         cropmask = int(args.cropmask)
         ntasks = int(args.nchunks)
         testoption = int(args.testoption)
+        sowing_time_mode = args.sowing_time_mode
         
             # Convert the JSON string to a Python dictionary
         try:
@@ -85,6 +93,8 @@ def main():
         nc_irrig_file = None
         nc_sowing_file = None
         nc_density_file = None
+        fert_policy_df = None
+        fert_operations_df = None
         
         sw = args.sowingDates
         print(sw)
@@ -183,7 +193,7 @@ def main():
             nc_variety_file = glob(os.path.join(work_dir, 'data', 'gridded_data', 'variety', '*.nc'))[0]
         if s_fert == 1:
             # Read the spatialized fertilization file
-            nc_fert_file = glob(os.path.join(work_dir, 'data', 'gridded_data', 'fert', '*.nc'))[0]
+            nc_fert_file = glob(os.path.join(work_dir, 'data', 'gridded_data', 'fertilization', '*.nc'))[0]
         if s_irrig == 1:
             # Read the spatialized irrigation file
             nc_irrig_file = glob(os.path.join(work_dir, 'data', 'gridded_data', 'irrig', '*.nc'))[0]
@@ -216,6 +226,7 @@ def main():
                     shapefile_path = glob(os.path.join(work_dir,'data', 'shapefile', '*.shp'))[0]
                     gdf = gpd.read_file(shapefile_path)
                     nc_spacialized = nc_spacialized.rio.write_crs("EPSG:4326")
+                    nc_spacialized = nc_spacialized.rio.set_spatial_dims(x_dim="lon", y_dim="lat")
                     nc_spacialized = nc_spacialized.rio.clip(gdf.geometry, gdf.crs,  all_touched=True, drop=True)
                 else: nc_spacialized = nc_spacialized.sel(lat=slice(bound[1],bound[3]), lon=slice(bound[0], bound[2]))
                 
@@ -265,10 +276,123 @@ def main():
                 df_mangt.drop("sdens", axis=1, inplace=True)
 
             if s_fert == 1:
+                if len(fertioption) != 0:
+                    df_mangt = df_mangt[
+                        df_mangt["InoFertiPolicyCode"].astype(str).isin(fertioption)
+                    ]
                 df_mangt.drop("InoFertiPolicyCode", axis=1, inplace=True)
             
             df_spatialized = df_spatialized.reset_index()
+
+            if s_sowing == 1 or s_fert == 1:
+                has_time = "time" in df_spatialized.columns
+                if s_fert == 1 or sowing_time_mode == "yearly":
+                    if not has_time:
+                        raise ValueError(
+                            "Yearly sowing or fertilization requires a spatialized "
+                            "NetCDF with a 'time' dimension."
+                        )
+                    time_values = df_spatialized["time"]
+                    numeric_time = pd.to_numeric(time_values, errors="coerce")
+                    if (
+                        numeric_time.notna().all()
+                        and numeric_time.between(1000, 9999).all()
+                    ):
+                        df_spatialized["year"] = numeric_time.astype(int)
+                    else:
+                        df_spatialized["year"] = (
+                            pd.to_datetime(time_values).dt.year.astype(int)
+                        )
+                    df_spatialized = df_spatialized.drop(columns=["time"])
+                elif s_sowing == 1 and has_time:
+                    unique_times = pd.Series(df_spatialized["time"]).drop_duplicates()
+                    if len(unique_times) > 1:
+                        raise ValueError(
+                            "The sowing NetCDF has several time values. Set "
+                            "sowing_time_mode='yearly' in config.ini or provide "
+                            "a static sowing_date(lat, lon) file."
+                        )
+                    df_spatialized = df_spatialized.drop(columns=["time"])
+
             df_spatialized["idPoint"] = df_spatialized["lat"].round(4).astype(str) + '_' + df_spatialized["lon"].round(4).astype(str)
+
+            if s_fert == 1:
+                date_cols = sorted(
+                    [c for c in df_spatialized.columns if re.fullmatch(r"oppdate\d+", c)],
+                    key=lambda x: int(re.search(r"\d+", x).group())
+                )
+                fert_pairs = []
+                for date_col in date_cols:
+                    op_number = int(re.search(r"\d+", date_col).group())
+                    fert_col = f"fert{op_number}"
+                    if fert_col in df_spatialized.columns:
+                        fert_pairs.append((op_number, date_col, fert_col))
+
+                if len(fert_pairs) == 0:
+                    raise ValueError(
+                        "Spatialized fertilization requires matching variables "
+                        "oppdate1/fert1, oppdate2/fert2, ..."
+                    )
+
+                fert_cols = [
+                    col for _, date_col, fert_col in fert_pairs
+                    for col in (date_col, fert_col)
+                ]
+                df_spatialized["InoFertiPolicyCode"] = (
+                    df_spatialized["idPoint"] + "_" + df_spatialized["year"].astype(str)
+                )
+
+                fert_base = df_spatialized[
+                    ["InoFertiPolicyCode", "year", "idPoint"] + fert_cols
+                ].drop_duplicates()
+
+                operation_frames = []
+                for if_number, date_col, fert_col in fert_pairs:
+                    op_df = fert_base[["InoFertiPolicyCode", date_col, fert_col]].copy()
+                    op_df = op_df.rename(columns={date_col: "Dferti", fert_col: "N"})
+                    op_df = op_df.dropna(subset=["Dferti", "N"])
+                    op_df = op_df[(op_df["N"] > 0) & (op_df["Dferti"] >= 0)]
+                    if op_df.empty:
+                        continue
+                    op_df["IFNumber"] = if_number - 1
+                    op_df["Dferti"] = op_df["Dferti"].round().astype(int)
+                    op_df["N"] = op_df["N"].astype(float)
+                    op_df["P"] = 0.0
+                    op_df["K"] = 0.0
+                    op_df["idFertInorg"] = (
+                        op_df["InoFertiPolicyCode"] + "." + op_df["IFNumber"].astype(str)
+                    )
+                    op_df = op_df[[
+                        "idFertInorg", "InoFertiPolicyCode", "IFNumber",
+                        "Dferti", "N", "P", "K"
+                    ]]
+                    op_df = op_df.rename(
+                        columns={"InoFertiPolicyCode": "InorgFertiPolicyCode"}
+                    )
+                    operation_frames.append(op_df)
+
+                if len(operation_frames) > 0:
+                    fert_operations_df = pd.concat(operation_frames, ignore_index=True)
+                else:
+                    fert_operations_df = pd.DataFrame(columns=[
+                        "idFertInorg", "InorgFertiPolicyCode", "IFNumber",
+                        "Dferti", "N", "P", "K"
+                    ])
+
+                fert_policy_df = (
+                    fert_base[["InoFertiPolicyCode"]]
+                    .drop_duplicates()
+                    .rename(columns={"InoFertiPolicyCode": "InorgFertiPolicyCode"})
+                )
+                op_counts = fert_operations_df.groupby("InorgFertiPolicyCode").size()
+                fert_policy_df["NumInorganicFerti"] = (
+                    fert_policy_df["InorgFertiPolicyCode"]
+                    .map(op_counts)
+                    .fillna(0)
+                    .astype(int)
+                )
+
+                df_spatialized = df_spatialized.drop(columns=fert_cols)
         
             if s_variety == 1:
                 # keep only the Idcultivar conatined in the variety dictionary
@@ -322,9 +446,21 @@ def main():
             
         
             # replace idMangt column by the concatenation of id and idMangt columns if len(spatialized_files) != 5
-            if len(spatialized_files) != 5:
+            has_yearly_spatialized_management = (
+                (s_sowing == 1 and sowing_time_mode == "yearly") or s_fert == 1
+            )
+            if len(spatialized_files) != 5 or has_yearly_spatialized_management:
                 df_mangt["oldid"] = df_mangt["idMangt"]
-                df_mangt["idMangt"] = df_mangt['idPoint'] + "_" + df_mangt["idMangt"]
+                if has_yearly_spatialized_management:
+                    df_mangt["idMangt"] = (
+                        df_mangt["idPoint"]
+                        + "_"
+                        + df_mangt["year"].astype(str)
+                        + "_"
+                        + df_mangt["idMangt"].astype(str)
+                    )
+                else:
+                    df_mangt["idMangt"] = df_mangt['idPoint'] + "_" + df_mangt["idMangt"]
 
             
         if int(sd) == 3:
@@ -360,7 +496,20 @@ def main():
         with sqlite3.connect(DB_MI) as conn:
             print("test cropmanagement", df_mangt.head(10))
             cur = conn.cursor()
-            df_mangt.to_sql("CropManagement", conn, if_exists='replace', index=False)                
+            df_mangt.to_sql("CropManagement", conn, if_exists='replace', index=False)
+            if s_fert == 1:
+                fert_policy_df.to_sql(
+                    "InorganicFertilizationPolicy",
+                    conn,
+                    if_exists='replace',
+                    index=False
+                )
+                fert_operations_df.to_sql(
+                    "InorganicFOperations",
+                    conn,
+                    if_exists='replace',
+                    index=False
+                )
             conn.commit()    
     except:
         print("Unexpected error have been catched:", sys.exc_info()[0])

@@ -19,7 +19,7 @@ source "${DATAMILL_WORK}/scripts/config_parser.sh"
 # Extract all values from the INI file
 
 s_variety=$(get_config_value "s_variety")
-echo "ðŸ”¹ Spatialized Variety: $S_VARIETY"
+echo "ðŸ”¹ Spatialized Variety: $s_variety"
 
 s_fert=$(get_config_value "s_fert")
 s_irr=$(get_config_value "s_irr")
@@ -49,6 +49,7 @@ testoption=$(get_config_value "testoption")
 shapefile=$(get_config_value "shapefile")
 parts=$(get_config_value "parts")
 fromMI=$(get_config_value "fromMI")
+sowing_time_mode=$(get_config_value "sowing_time_mode")
 
 #####################################
 
@@ -93,20 +94,20 @@ if [ $fromMI -ne 1 ]; then
     #:<<comment
     echo "end transfert"
     date
-    python3 ${DATAMILL_WORK}/scripts/functions/compute_etp2.py --index $i --ncpus $ncpus;
+    python3 ${DATAMILL_WORK}/scripts/functions/compute_etp_rhum.py --index $i --ncpus $ncpus;
     echo "end compute_etp"
     date
     wait
 
     #comment
 
-    python ${DATAMILL_WORK}/scripts/workflow/spatialized_cropMangt.py --index $i --svariety "$s_variety" --sfert "$s_fert" --sirr "$s_irr" --ssowing "$s_sowing" --sdensity "$s_density" --variety_dict "$variety_dict" --sowingDates "${SW[@]}" --bnd "${bound[@]}" --cropvariety "${variety[@]}" --ferti "${fertioption[@]}" --sowingoption $SD --shp $shapefile --cropmask "$cropmask" --nchunks $nchunks --testoption $testoption;
+    python ${DATAMILL_WORK}/scripts/workflow/spatialized_cropMangt.py --index $i --svariety "$s_variety" --sfert "$s_fert" --sirr "$s_irr" --ssowing "$s_sowing" --sdensity "$s_density" --variety_dict "$variety_dict" --sowingDates "${SW[@]}" --bnd "${bound[@]}" --cropvariety "${variety[@]}" --ferti "${fertioption[@]}" --sowingoption $SD --shp $shapefile --cropmask "$cropmask" --nchunks $nchunks --testoption $testoption --sowing_time_mode $sowing_time_mode;
     wait
 
     echo "end crop management"
     date
 
-    python3 ${DATAMILL_WORK}/scripts/workflow/init_simunitlist.py --index $i --startdate $startd --enddate $endd --option "${simoption[@]}" --sowingoption $SD --deltaStart $start_sowing --deltaEnd $end_sowing;
+    python3 ${DATAMILL_WORK}/scripts/workflow/init_simunitlist.py --index $i --startdate $startd --enddate $endd --option "${simoption[@]}" --sowingoption $SD --deltaStart $start_sowing --deltaEnd $end_sowing --MaxiYear $maxi;
     wait
 
     echo "end data processing"

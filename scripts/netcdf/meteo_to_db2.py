@@ -216,7 +216,7 @@ def main():
                 if typeoftest==1:
                     if "crs" in ds: ds = ds.drop_vars(["crs"])
                     test = os.path.join(work_dir, 'test', "test.csv")
-                    df_test = pd.read_csv(test)
+                    df_test = pd.read_csv(test, sep=";")
                     xx = xr.DataArray(df_test["lat"].to_list(), dims=['location'])
                     yy = xr.DataArray(df_test["lon"].to_list(), dims=['location'])
                     ds = ds.sel(lat =xx, lon=yy, method = "nearest")

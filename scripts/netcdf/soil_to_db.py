@@ -155,7 +155,7 @@ def main():
             df = ds.to_dataframe().dropna(axis=0, how="any")
         else:
             test = os.path.join(work_dir, 'test', "test.csv")
-            df_test = pd.read_csv(test)
+            df_test = pd.read_csv(test, sep=";")
             yy = xr.DataArray(df_test["lat"].to_list(), dims=['location'])
             xx = xr.DataArray(df_test["lon"].to_list(), dims=['location'])
             df = ds_soil.sel(lat =yy, lon=xx, method = "nearest").to_dataframe().dropna(axis=0, how="any")

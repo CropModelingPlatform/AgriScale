@@ -47,6 +47,7 @@ def main():
         parser.add_argument("--sowingoption", type=int, help="sowing option")
         parser.add_argument("--deltaStart", type=int, help="diff between sowing date and start of simulation")
         parser.add_argument("--deltaEnd", type=int, help="diff between sowing date and end of simulation")
+        parser.add_argument("--MaxiYear", type=int, help="maxi year for simulation")
 
         args = parser.parse_args()
         
@@ -55,6 +56,7 @@ def main():
         endd = args.enddate
         simoption = args.option
         sd = args.sowingoption
+        maxiyear = int(args.MaxiYear)
         print(simoption)
        
         #o = args.option
@@ -79,15 +81,32 @@ def main():
         p_e = int(args.deltaEnd)
         if sd == 4 or sd == 3 or sd==0:
             start_day_expr = "CASE WHEN cm.sowingdate - ? < 1 THEN 1 ELSE cm.sowingdate - ? END"
+
+            # SQL equivalents of is_leap_year() for cy.year and cy.year+1
+            days_y0 = ("CASE WHEN (cy.year % 4 = 0 AND cy.year % 100 != 0)"
+                       " OR (cy.year % 400 = 0) THEN 366 ELSE 365 END")
+            days_y1 = ("CASE WHEN ((cy.year+1) % 4 = 0 AND (cy.year+1) % 100 != 0)"
+                       " OR ((cy.year+1) % 400 = 0) THEN 366 ELSE 365 END")
+            tot = "cm.sowingdate + cm.DHarvest"
+
+            # Mirrors the Python loop:
+            #   while day > days_in_year(year): day -= days_in_year(year); year += 1
+            # Handles up to +2 years (DHarvest can exceed 365 for long-season crops)
+            end_year_expr = f"""
+                CASE
+                    WHEN {tot} <= {days_y0}              THEN cy.year
+                    WHEN {tot} <= {days_y0} + {days_y1}  THEN cy.year + 1
+                    ELSE cy.year + 2
+                END"""
+
             end_day_expr = f"""
-                CASE 
-                    WHEN cm.sowingdate + ? <= 365 THEN cm.sowingdate + ? 
-                    WHEN (cy.year % 4 = 0 AND cy.year % 100 != 0) OR (cy.year % 400 = 0) THEN cm.sowingdate + ? - 366 
-                    ELSE cm.sowingdate + ? - 365 
-                END
-            """
-            end_year_expr = "CASE WHEN cm.sowingdate + ? > 365 THEN cy.year + 1 ELSE cy.year END"
-            params = (p_d, p_d, p_e, p_e, p_e, p_e, p_e) 
+                CASE
+                    WHEN {tot} <= {days_y0}             THEN {tot}
+                    WHEN {tot} <= {days_y0} + {days_y1} THEN {tot} - ({days_y0})
+                    ELSE {tot} - ({days_y0}) - ({days_y1})
+                END"""
+
+            params = (p_d, p_d)
         else:
             start_day_expr = "?"
             end_day_expr =  "?"
@@ -194,11 +213,19 @@ def main():
             cur.execute("PRAGMA table_info(CropManagement)")
             columns = [col[1] for col in cur.fetchall()]
             idPoint_exists = "idPoint" in columns
+            year_exists = "year" in columns
             
             print("idPoint_exists", idPoint_exists)
+            print("year_exists", year_exists)
             log_memory()
             if idPoint_exists:
                 select_sql = sql_as_string_spatialized
+                if year_exists:
+                    select_sql = select_sql.replace(
+                        "INNER JOIN CropManagement cm ON cy.idPoint = cm.idPoint",
+                        "INNER JOIN CropManagement cm ON cy.idPoint = cm.idPoint "
+                        "AND CAST(cm.year AS INTEGER) = CAST(cy.year AS INTEGER)"
+                    )
             else:
                 select_sql = sql_as_string
                 
@@ -219,6 +246,12 @@ def main():
                 log_memory()
                 print(f"Inserted {len(rows)} rows.")
             cur.execute("DROP TABLE IF EXISTS temp_simoption")
+
+            cur.execute(
+                "DELETE FROM SimUnitList WHERE EndYear > ?",
+                (maxiyear,)
+            )
+            conn.commit()
 
             # Filtrage post-insertion : supprimer les lignes où idOption=0 et idMangt n'est pas associée à InoFertiPolicyCode=0
             cur.execute('''

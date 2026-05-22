@@ -22,6 +22,7 @@ import xarray as xr, os
 def main():
     try:
         print("dem_to_db.py")
+        # work_dir = os.getcwd()
         work_dir = '/package'
         inter = '/inter'
         data_dir = '/inputData'        
@@ -52,7 +53,10 @@ def main():
         
         ds_dem = open_zarr(glob(os.path.join(data_dir,'dem', '*.zarr'))[0], consolidated=True)
         if typeoftest !=1 :
+            #ds_mask = xr.open_dataset(glob(os.path.join(data_dir,'land', '*.nc'))[0])
+            #ds_mask = open_zarr_cached(glob(os.path.join(data_dir,'land', '*.zarr'))[0], str(args.index), consolidated=True)
             ds_mask = open_zarr(glob(os.path.join(data_dir,'land', '*.zarr'))[0],  consolidated=True)
+
             ds_mask = ds_mask.rio.write_crs("EPSG:4326", inplace=True) 
 
             if shp == 1:
@@ -82,6 +86,7 @@ def main():
             ### soil
             SOIL_DIR = os.path.join(data_dir, 'soil')
             ncs = glob(os.path.join(SOIL_DIR, '*.zarr'))
+            #ds = xr.open_mfdataset(ncs, cache=False)
             ds_soil = xr.open_mfdataset(
                     ncs,
                     engine="zarr",
@@ -121,6 +126,9 @@ def main():
             da_mask_full = df_mask_full.where(
                 df_mask_full.isin(df_mask)).to_xarray()
             ds_mask = ds_mask.where(da_mask_full.mask == 1)
+
+            #ds_dem = xr.open_dataset(glob(os.path.join(data_dir,'dem', '*.nc'))[0])
+            #ds_dem = open_zarr_cached(glob(os.path.join(data_dir,'dem', '*.zarr'))[0], str(args.index), consolidated=True)
             
             if shp == 1: 
                 ds_dem = ds_dem.rio.write_crs("EPSG:4326")
@@ -133,7 +141,7 @@ def main():
         
         else:
             test = os.path.join(work_dir, 'test', "test.csv")
-            df_test = pd.read_csv(test)
+            df_test = pd.read_csv(test, sep=";")
             yy = xr.DataArray(df_test["lat"].to_list(), dims=['location'])
             xx = xr.DataArray(df_test["lon"].to_list(), dims=['location'])
             ds_dem = ds_dem.sel(lat =yy, lon=xx, method = "nearest")    
